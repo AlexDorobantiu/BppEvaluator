@@ -11,6 +11,7 @@ namespace BppEvaluator
         static readonly List<string> knownBitmapExtensions = new List<string>() { ".tif", ".bmp", ".tiff", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".emf", ".exif", ".wmf" };
         private const string pgmExtension = ".pgm";
         const int filenamePaddingSize = 40;
+        const int bitsInByte = 8;
 
         static void Main(string[] args)
         {
@@ -105,11 +106,19 @@ namespace BppEvaluator
             int sizeX = bitmap.Width;
             int sizeY = bitmap.Height;
 
-            int bpp = 8; // default 8
+            int bpp = 8; // default 8            
+
             switch (bitmap.PixelFormat)
             {
                 case PixelFormat.Format32bppArgb:
-                    bpp = 32;
+                    if ((bitmap.Palette.Flags & (int)PaletteFlags.GrayScale) != 0) //grayscale
+                    {
+                        bpp = 8;
+                    }
+                    else
+                    {
+                        bpp = 32;
+                    }
                     break;
                 case PixelFormat.Format24bppRgb:
                     bpp = 24;
@@ -125,7 +134,7 @@ namespace BppEvaluator
                     break;
             }
 
-            return originalFileSize * bpp / (double)(sizeX * sizeY);
+            return originalFileSize * bitsInByte / ((double)sizeX * sizeY * bpp / bitsInByte);
         }
     }
 }
