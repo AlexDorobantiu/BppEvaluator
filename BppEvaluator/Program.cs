@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 
 namespace BppEvaluator
@@ -9,7 +8,8 @@ namespace BppEvaluator
     class Program
     {
         static readonly List<string> knownBitmapExtensions = new List<string>() { ".tif", ".bmp", ".tiff", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".emf", ".exif", ".wmf" };
-        private const string pgmExtension = ".pgm";
+        static readonly List<string> knownNetpbmExtensions = new List<string>() { ".pgm", ".ppm", ".pbm" };
+        private const string netpbmCommentSign = "#";
         const int filenamePaddingSize = 40;
         const int bitsInByte = 8;
 
@@ -44,8 +44,19 @@ namespace BppEvaluator
 
         private static bool computeBppForFilename(string filename, long originalFileSize)
         {
-            bool found = false;
-            foreach (string extension in knownBitmapExtensions)
+            bool found = iterateFiles(filename, originalFileSize, knownBitmapExtensions, computeBppUsingBitmap);
+            if (!found)
+            {
+                // try netpbm
+                found = iterateFiles(filename, originalFileSize, knownNetpbmExtensions, computeBppFromPgm);
+            }
+
+            return found;
+        }
+
+        private static bool iterateFiles(string filename, long originalFileSize, ICollection<string> extensions, Func<long, string, double> bppComputer)
+        {
+            foreach (string extension in extensions)
             {
                 string newPath = Path.ChangeExtension(filename, extension);
                 FileInfo fileInfo = new FileInfo(newPath);
@@ -53,36 +64,17 @@ namespace BppEvaluator
                 {
                     try
                     {
-                        Console.Write(computeBppUsingBitmap(originalFileSize, newPath));
-                        found = true;
-                        break;
+                        Console.Write(bppComputer(originalFileSize, newPath));
+                        return true;
                     }
                     catch
                     {
-                        // could not open bitmap file -> ignore
-                    }
-                }
-            }
-            if (!found)
-            {
-                // try .pgm
-                string newPath = Path.ChangeExtension(filename, pgmExtension);
-                FileInfo fileInfo = new FileInfo(newPath);
-                if (fileInfo.Exists)
-                {
-                    try
-                    {
-                        Console.Write(computeBppFromPgm(originalFileSize, newPath));
-                        found = true;
-                    }
-                    catch
-                    {
-                        // could not parse the PGM -> ignore
+                        // could not parse the filetype -> ignore
                     }
                 }
             }
 
-            return found;
+            return false;
         }
 
         private static double computeBppFromPgm(long originalFileSize, string newPath)
@@ -91,13 +83,16 @@ namespace BppEvaluator
             using (StreamReader streamReader = new StreamReader(newPath))
             {
                 streamReader.ReadLine(); // pgm version
-                sizeString = streamReader.ReadLine();
+                do
+                {
+                    sizeString = streamReader.ReadLine();
+                } while (sizeString.StartsWith(netpbmCommentSign));
             }
             string[] split = sizeString.Split(' ');
             int sizeX = int.Parse(split[0]);
             int sizeY = int.Parse(split[1]);
-            // bpp for pgm is 8
-            return originalFileSize * 8 / (double)(sizeX * sizeY);
+
+            return computeBitsPerPixel(originalFileSize, sizeX, sizeY);
         }
 
         private static double computeBppUsingBitmap(long originalFileSize, string path)
@@ -106,35 +101,12 @@ namespace BppEvaluator
             int sizeX = bitmap.Width;
             int sizeY = bitmap.Height;
 
-            int bpp = 8; // default 8            
+            return computeBitsPerPixel(originalFileSize, sizeX, sizeY);
+        }
 
-            switch (bitmap.PixelFormat)
-            {
-                case PixelFormat.Format32bppArgb:
-                    if ((bitmap.Palette.Flags & (int)PaletteFlags.GrayScale) != 0) //grayscale
-                    {
-                        bpp = 8;
-                    }
-                    else
-                    {
-                        bpp = 32;
-                    }
-                    break;
-                case PixelFormat.Format24bppRgb:
-                    bpp = 24;
-                    break;
-                case PixelFormat.Format8bppIndexed:
-                    bpp = 8;
-                    break;
-                case PixelFormat.Format4bppIndexed:
-                    bpp = 4;
-                    break;
-                case PixelFormat.Format1bppIndexed:
-                    bpp = 1;
-                    break;
-            }
-
-            return originalFileSize * bitsInByte / ((double)sizeX * sizeY * bpp / bitsInByte);
+        private static double computeBitsPerPixel(long originalFileSize, int sizeX, int sizeY)
+        {
+            return originalFileSize * bitsInByte / (double)(sizeX * sizeY);
         }
     }
 }
